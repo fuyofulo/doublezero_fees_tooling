@@ -10,7 +10,6 @@ public Solana RPC and writes epoch bundles to JSON.
 - Generates a human-readable epoch report (optional).
 
 ## Quick usage
-From `fees-tooling/`:
 
 ```bash
 cargo run -- --latest-finalized --scan-back 120
