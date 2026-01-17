@@ -1,0 +1,11 @@
+{
+  "distribution_key": "AsXCtSD7Dth2PUTCSsqdsUks977wmme9nhHVUyToKpGP",
+  "dz_epoch": 55,
+  "epoch_selection": {
+    "mode": "explicit",
+    "scan_back": 48
+  },
+  "journal_key": "2x9zkLfiLAQLYeiibHp2ccSSsF4d8X5UQ3vtBDwbQhuo",
+  "program_config_key": "8hCG3Mc1wmCTJYGn4QzFWEmvevonGunRxBTH9qPg1Um9",
+  "program_id": "dzrevZC94tBLwuHw1dyynZxaXTWyp7yocsinyEVPtt4"
+}
