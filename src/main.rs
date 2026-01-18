@@ -870,25 +870,25 @@ struct RawAccount {
 fn print_usage() {
     eprintln!(
         r#"Usage:
-  fees-tooling --dz-epoch <n> [--out-dir <path>] [--index]
-  fees-tooling pipeline --dz-epoch <n> [--out-dir <path>] [--index] [--snapshot-bucket <url>]
-  fees-tooling report <epoch_dir> [--fees-csv <path>] [--out-dir <path>]
-  fees-tooling snapshot --epoch <n> [--out-dir <path>] [--bucket <url>]
-  fees-tooling enrich --snapshot <path> --onchain-dir <path> [--out-dir <path>]
+        fees-tooling --dz-epoch <n> [--out-dir <path>] [--index]
+        fees-tooling pipeline --dz-epoch <n> [--out-dir <path>] [--index] [--snapshot-bucket <url>]
+        fees-tooling report <epoch_dir> [--fees-csv <path>] [--out-dir <path>]
+        fees-tooling snapshot --epoch <n> [--out-dir <path>] [--bucket <url>]
+        fees-tooling enrich --snapshot <path> --onchain-dir <path> [--out-dir <path>]
 
-Defaults:
-  --out-dir  out/epoch_<dz_epoch>
-
-Notes:
-  report expects <epoch_dir> to contain onchain/distribution.json
-
-Flags:
-  --index            Write distributions_index.json (summary of all distribution accounts)
-  --snapshot-bucket  Override snapshot S3 bucket (pipeline only)
-  report             Generate epoch_report.json/.md from an epoch output folder
-  snapshot           Download snapshot JSON from the public S3 bucket
-  enrich             Merge snapshot + on-chain outputs into enriched_epoch.json
-  --fees-csv <path>  Optional fees CSV for reconciliation (report mode)
-"#
+        Defaults:
+        --out-dir  out/epoch_<dz_epoch>
+        
+        Notes:
+        report expects <epoch_dir> to contain onchain/distribution.json
+        
+        Flags:
+        --index            Write distributions_index.json (summary of all distribution accounts)
+        --snapshot-bucket  Override snapshot S3 bucket (pipeline only)
+        report             Generate epoch_report.json/.md from an epoch output folder
+        snapshot           Download snapshot JSON from the public S3 bucket
+        enrich             Merge snapshot + on-chain outputs into enriched_epoch.json
+        --fees-csv <path>  Optional fees CSV for reconciliation (report mode)
+        "#
     );
 }

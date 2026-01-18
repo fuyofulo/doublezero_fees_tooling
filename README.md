@@ -1,4 +1,4 @@
-# Fees Tooling MVP (epoch-binder)
+# DoubleZero: Fees Tooling (RFP-2) Grant Project
 
 This project is a standalone MVP that fetches DoubleZero economic data from
 public Solana RPC and public snapshot buckets, then writes epoch bundles to JSON.
