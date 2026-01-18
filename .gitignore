@@ -2,3 +2,4 @@
 target
 Cargo.lock
 .gitignore
+out/epoch_*/snapshot/
