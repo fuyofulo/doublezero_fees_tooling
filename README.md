@@ -10,10 +10,14 @@ public Solana RPC and public snapshot buckets, then writes epoch bundles to JSON
 - Generates a human-readable epoch report (optional).
 - Enriches epoch bundles with inventory + telemetry aggregates (optional).
 
+## Prereqs
+- Rust toolchain installed.
+- set `HELIUS_API_KEY` in .env file
+
 ## Quick usage
 
 ```bash
-cargo run -- --latest-finalized --scan-back 120
+cargo run -- --dz-epoch <dz_epoch>
 ```
 
 Outputs to `out/epoch_<dz_epoch>/`:
@@ -25,7 +29,7 @@ Outputs to `out/epoch_<dz_epoch>/`:
 Full pipeline (on-chain + snapshot + enrich, parallelized):
 
 ```bash
-cargo run -- pipeline --latest-finalized --scan-back 120
+cargo run -- pipeline --dz-epoch <dz_epoch>
 ```
 
 Additional outputs:

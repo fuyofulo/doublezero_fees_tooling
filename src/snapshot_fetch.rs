@@ -16,7 +16,6 @@ const DEFAULT_SNAPSHOT_TIMEOUT_SECS: u64 = 120;
 #[derive(Debug)]
 struct Args {
     epoch: Option<u64>,
-    latest: bool,
     out_dir: Option<PathBuf>,
     bucket: String,
 }
@@ -28,12 +27,7 @@ where
     let args = parse_args(args)?;
     let client = Client::new();
 
-    let epoch = if args.latest {
-        detect_latest_snapshot_epoch(&client, &args.bucket)?
-            .context("no snapshot epochs found")?
-    } else {
-        args.epoch.expect("epoch required")
-    };
+    let epoch = args.epoch.expect("epoch required");
 
     let out_dir = args
         .out_dir
@@ -75,7 +69,6 @@ where
     I: Iterator<Item = String>,
 {
     let mut epoch: Option<u64> = None;
-    let mut latest = false;
     let mut out_dir: Option<PathBuf> = None;
     let mut bucket = DEFAULT_SNAPSHOT_BUCKET.to_string();
 
@@ -85,7 +78,6 @@ where
                 let value = args.next().context("missing value for --epoch")?;
                 epoch = Some(value.parse().context("invalid epoch")?);
             }
-            "--latest" => latest = true,
             "--out-dir" => {
                 let value = args.next().context("missing value for --out-dir")?;
                 out_dir = Some(PathBuf::from(value));
@@ -102,16 +94,12 @@ where
         }
     }
 
-    if epoch.is_none() && !latest {
-        return Err(anyhow!("provide --epoch <n> or --latest"));
-    }
-    if epoch.is_some() && latest {
-        return Err(anyhow!("cannot combine --epoch and --latest"));
+    if epoch.is_none() {
+        return Err(anyhow!("provide --epoch <n>"));
     }
 
     Ok(Args {
         epoch,
-        latest,
         out_dir,
         bucket,
     })
@@ -147,59 +135,6 @@ fn fetch_bytes_with_retry(
     Err(last_err.unwrap_or_else(|| anyhow!("request failed")))
 }
 
-fn detect_latest_snapshot_epoch(client: &Client, bucket: &str) -> Result<Option<u64>> {
-    let xml = list_bucket_xml(client, bucket)?;
-    let mut epochs = Vec::new();
-    for key in parse_keys(&xml) {
-        if let Some(epoch) = parse_snapshot_epoch(&key) {
-            epochs.push(epoch);
-        }
-    }
-    epochs.sort_unstable();
-    Ok(epochs.pop())
-}
-
-fn list_bucket_xml(client: &Client, bucket: &str) -> Result<String> {
-    let url = format!("{}/?list-type=2", bucket.trim_end_matches('/'));
-    let response = client
-        .get(url)
-        .send()
-        .context("http request failed")?
-        .error_for_status()
-        .context("http error status")?;
-    response.text().context("read response body")
-}
-
-fn parse_snapshot_epoch(key: &str) -> Option<u64> {
-    let prefix = "mn-epoch-";
-    let suffix = "-snapshot.json";
-    if !key.starts_with(prefix) || !key.ends_with(suffix) {
-        return None;
-    }
-    let middle = &key[prefix.len()..key.len() - suffix.len()];
-    middle.parse().ok()
-}
-
-fn parse_keys(xml: &str) -> Vec<String> {
-    let mut keys = Vec::new();
-    let mut rest = xml;
-    let open = "<Key>";
-    let close = "</Key>";
-
-    while let Some(start) = rest.find(open) {
-        let after = &rest[start + open.len()..];
-        if let Some(end) = after.find(close) {
-            let key = &after[..end];
-            keys.push(key.to_string());
-            rest = &after[end + close.len()..];
-        } else {
-            break;
-        }
-    }
-
-    keys
-}
-
 fn write_file(path: &Path, contents: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).context("create output directory")?;
@@ -211,7 +146,6 @@ pub fn print_usage() {
     eprintln!(
         r#"Usage:
   fees-tooling snapshot --epoch <n> [--out-dir <path>] [--bucket <url>]
-  fees-tooling snapshot --latest [--out-dir <path>] [--bucket <url>]
 
 Defaults:
   --out-dir  out/epoch_<dz_epoch>/snapshot

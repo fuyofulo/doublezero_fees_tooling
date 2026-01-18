@@ -30,11 +30,7 @@ use zero_copy::{checked_from_bytes_with_discriminator, discriminator};
 #[derive(Debug)]
 struct Args {
     dz_epoch: Option<u64>,
-    use_latest: bool,
-    use_latest_finalized: bool,
-    scan_back: u64,
     index_distributions: bool,
-    rpc_url: String,
     out_dir: Option<PathBuf>,
     snapshot_bucket: Option<String>,
 }
@@ -293,16 +289,19 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let client = Client::new();
     let args = parse_args(raw_args.into_iter())?;
-    let dz_epoch = resolve_epoch(&args, &client)?;
+    let dz_epoch = args
+        .dz_epoch
+        .context("missing dz epoch (use --dz-epoch <n> or pass it as a positional)")?;
+    let rpc_url = default_rpc_url();
+    let client = Client::new();
     let out_dir =
         args.out_dir.clone().unwrap_or_else(|| PathBuf::from(format!("out/epoch_{dz_epoch}")));
     let onchain_dir = out_dir.join("onchain");
 
     let onchain = write_onchain_bundle(
         &client,
-        &args.rpc_url,
+        &rpc_url,
         dz_epoch,
         &onchain_dir,
         &out_dir,
@@ -317,8 +316,7 @@ fn main() -> Result<()> {
         "distribution_key": onchain.distribution_key.to_string(),
         "onchain_dir": onchain_dir.display().to_string(),
         "epoch_selection": {
-            "mode": if args.use_latest_finalized { "latest_finalized" } else if args.use_latest { "latest_completed" } else { "explicit" },
-            "scan_back": args.scan_back
+            "mode": "explicit"
         }
     });
     write_json(&out_dir, "summary.json", &summary)?;
@@ -331,11 +329,7 @@ where
     I: Iterator<Item = String>,
 {
     let mut dz_epoch: Option<u64> = None;
-    let mut rpc_url: Option<String> = None;
     let mut out_dir: Option<PathBuf> = None;
-    let mut use_latest = false;
-    let mut use_latest_finalized = false;
-    let mut scan_back: u64 = 48;
     let mut index_distributions = false;
     let mut snapshot_bucket: Option<String> = None;
 
@@ -347,29 +341,11 @@ where
                     .context("missing value for --dz-epoch")?;
                 dz_epoch = Some(value.parse().context("invalid dz epoch")?);
             }
-            "--rpc-url" => {
-                rpc_url = Some(
-                    args.next()
-                        .context("missing value for --rpc-url")?,
-                );
-            }
             "--out-dir" => {
                 out_dir = Some(PathBuf::from(
                     args.next()
                         .context("missing value for --out-dir")?,
                 ));
-            }
-            "--latest" => {
-                use_latest = true;
-            }
-            "--latest-finalized" => {
-                use_latest_finalized = true;
-            }
-            "--scan-back" => {
-                let value = args
-                    .next()
-                    .context("missing value for --scan-back")?;
-                scan_back = value.parse().context("invalid scan-back value")?;
             }
             "--index" => {
                 index_distributions = true;
@@ -393,25 +369,14 @@ where
         }
     }
 
-    if dz_epoch.is_some() && (use_latest || use_latest_finalized) {
+    if dz_epoch.is_none() {
         return Err(anyhow!(
-            "cannot combine --latest/--latest-finalized with an explicit dz epoch"
+            "missing dz epoch (use --dz-epoch <n> or pass it as a positional)"
         ));
     }
-    if use_latest && use_latest_finalized {
-        return Err(anyhow!(
-            "cannot combine --latest with --latest-finalized"
-        ));
-    }
-    let rpc_url = rpc_url.unwrap_or_else(default_rpc_url);
-
     Ok(Args {
         dz_epoch,
-        use_latest,
-        use_latest_finalized,
-        scan_back,
         index_distributions,
-        rpc_url,
         out_dir,
         snapshot_bucket,
     })
@@ -420,7 +385,7 @@ where
 fn default_rpc_url() -> String {
     let _ = dotenvy::dotenv();
     let key = env::var("HELIUS_API_KEY")
-        .expect("HELIUS_API_KEY is not set (try --rpc-url)");
+        .expect("HELIUS_API_KEY is not set (set it in fees-tooling/.env)");
     format!("https://mainnet.helius-rpc.com/?api-key={key}")
 }
 
@@ -428,9 +393,10 @@ fn run_pipeline<I>(args: I) -> Result<()>
 where
     I: Iterator<Item = String>,
 {
-    let client = Client::new();
     let args = parse_args(args)?;
-    let dz_epoch = resolve_epoch(&args, &client)?;
+    let dz_epoch = args
+        .dz_epoch
+        .context("missing dz epoch (use --dz-epoch <n> or pass it as a positional)")?;
 
     let out_dir =
         args.out_dir.clone().unwrap_or_else(|| PathBuf::from(format!("out/epoch_{dz_epoch}")));
@@ -442,7 +408,7 @@ where
         .unwrap_or_else(|| snapshot_fetch::DEFAULT_SNAPSHOT_BUCKET.to_string());
     let index_distributions = args.index_distributions;
 
-    let rpc_url = args.rpc_url.clone();
+    let rpc_url = default_rpc_url();
     let onchain_dir_thread = onchain_dir.clone();
     let out_dir_thread = out_dir.clone();
     let onchain_handle = thread::spawn(move || -> Result<OnchainSummary> {
@@ -495,8 +461,7 @@ where
         "snapshot_bucket": snapshot_bucket,
         "enriched_file": enriched_path.display().to_string(),
         "epoch_selection": {
-            "mode": if args.use_latest_finalized { "latest_finalized" } else if args.use_latest { "latest_completed" } else { "explicit" },
-            "scan_back": args.scan_back
+            "mode": "explicit"
         }
     });
     write_json(&out_dir, "summary.json", &summary)?;
@@ -893,73 +858,6 @@ fn write_json<T: Serialize>(out_dir: &Path, name: &str, value: &T) -> Result<()>
     Ok(())
 }
 
-fn resolve_epoch(args: &Args, client: &Client) -> Result<u64> {
-    if let Some(epoch) = args.dz_epoch {
-        return Ok(epoch);
-    }
-    if !(args.use_latest || args.use_latest_finalized) {
-        return Err(anyhow!(
-            "missing dz epoch argument (use --latest or --latest-finalized)"
-        ));
-    }
-
-    let program_config_key = ProgramConfig::find_address().0;
-    let raw_config = fetch_account(client, &args.rpc_url, &program_config_key)?;
-    let (config, _) =
-        parse_account::<ProgramConfig>(&raw_config.data, program_config_discriminator())?;
-    let latest_completed = config
-        .next_completed_dz_epoch
-        .checked_sub_duration(1)
-        .map(|epoch| epoch.value())
-        .ok_or_else(|| anyhow!("next_completed_dz_epoch is not set"))?;
-
-    if args.use_latest_finalized {
-        return find_latest_finalized_epoch(
-            client,
-            &args.rpc_url,
-            latest_completed,
-            args.scan_back,
-        );
-    }
-
-    Ok(latest_completed)
-}
-
-fn find_latest_finalized_epoch(
-    client: &Client,
-    rpc_url: &str,
-    start_epoch: u64,
-    scan_back: u64,
-) -> Result<u64> {
-    for i in 0..=scan_back {
-        let epoch = start_epoch.saturating_sub(i);
-        let distribution_key =
-            Distribution::find_address(DoubleZeroEpoch(epoch)).0;
-        let raw = fetch_account(client, rpc_url, &distribution_key)?;
-        let (distribution, _) =
-            parse_account::<Distribution>(&raw.data, distribution_discriminator())?;
-
-        let publishable =
-            distribution.is_debt_calculation_finalized()
-                && distribution.is_rewards_calculation_finalized()
-                && distribution.has_swept_2z_tokens();
-
-        if publishable {
-            eprintln!(
-                "Selected finalized epoch {} (scan_back={})",
-                epoch, scan_back
-            );
-            return Ok(epoch);
-        }
-    }
-
-    Err(anyhow!(
-        "no finalized epoch found in range {}..{}",
-        start_epoch.saturating_sub(scan_back),
-        start_epoch
-    ))
-}
-
 struct RawAccount {
     context_slot: u64,
     owner: Pubkey,
@@ -972,24 +870,19 @@ struct RawAccount {
 fn print_usage() {
     eprintln!(
         r#"Usage:
-  fees-tooling [--dz-epoch <n> | --latest | --latest-finalized] [--scan-back <n>] [--rpc-url <url>] [--out-dir <path>] [--index]
-  fees-tooling pipeline [--dz-epoch <n> | --latest | --latest-finalized] [--scan-back <n>] [--rpc-url <url>] [--out-dir <path>] [--index] [--snapshot-bucket <url>]
+  fees-tooling --dz-epoch <n> [--out-dir <path>] [--index]
+  fees-tooling pipeline --dz-epoch <n> [--out-dir <path>] [--index] [--snapshot-bucket <url>]
   fees-tooling report <epoch_dir> [--fees-csv <path>] [--out-dir <path>]
   fees-tooling snapshot --epoch <n> [--out-dir <path>] [--bucket <url>]
-  fees-tooling snapshot --latest [--out-dir <path>] [--bucket <url>]
   fees-tooling enrich --snapshot <path> --onchain-dir <path> [--out-dir <path>]
 
 Defaults:
-  --rpc-url  https://mainnet.helius-rpc.com/?api-key=$HELIUS_API_KEY
   --out-dir  out/epoch_<dz_epoch>
 
 Notes:
   report expects <epoch_dir> to contain onchain/distribution.json
 
 Flags:
-  --latest           Auto-select latest completed DZ epoch from ProgramConfig
-  --latest-finalized Find most recent epoch with rewards finalized and swept
-  --scan-back <n>    Search window when using --latest-finalized (default: 48)
   --index            Write distributions_index.json (summary of all distribution accounts)
   --snapshot-bucket  Override snapshot S3 bucket (pipeline only)
   report             Generate epoch_report.json/.md from an epoch output folder

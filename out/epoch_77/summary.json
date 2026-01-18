@@ -1,0 +1,16 @@
+{
+  "distribution_key": "FuNVD9RW1ST2owzhjNr7PWkK7Uq2ghz9P6kax9N45YBL",
+  "dz_epoch": 77,
+  "enriched_file": "out/epoch_77/enriched_epoch.json",
+  "epoch_selection": {
+    "mode": "explicit",
+    "scan_back": 48
+  },
+  "journal_key": "2x9zkLfiLAQLYeiibHp2ccSSsF4d8X5UQ3vtBDwbQhuo",
+  "onchain_dir": "out/epoch_77/onchain",
+  "program_config_key": "8hCG3Mc1wmCTJYGn4QzFWEmvevonGunRxBTH9qPg1Um9",
+  "program_id": "dzrevZC94tBLwuHw1dyynZxaXTWyp7yocsinyEVPtt4",
+  "snapshot_bucket": "https://doublezero-contributor-rewards-mn-beta-snapshots.s3.amazonaws.com",
+  "snapshot_dir": "out/epoch_77/snapshot",
+  "snapshot_file": "out/epoch_77/snapshot/mn-epoch-77-snapshot.json"
+}

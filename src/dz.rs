@@ -21,11 +21,6 @@ impl DoubleZeroEpoch {
     pub fn as_seed(&self) -> [u8; 8] {
         self.0.to_le_bytes()
     }
-
-    pub fn checked_sub_duration(&self, duration: EpochDuration) -> Option<Self> {
-        let value = self.0.checked_sub(duration as u64)?;
-        Some(Self(value))
-    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Pod, Zeroable)]

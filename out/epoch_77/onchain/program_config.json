@@ -1,0 +1,54 @@
+{
+  "context_slot": 394276770,
+  "account": {
+    "pubkey": "8hCG3Mc1wmCTJYGn4QzFWEmvevonGunRxBTH9qPg1Um9",
+    "owner": "dzrevZC94tBLwuHw1dyynZxaXTWyp7yocsinyEVPtt4",
+    "lamports": 72161280,
+    "executable": false,
+    "rent_epoch": 18446744073709551615,
+    "data_len": 10240
+  },
+  "remaining_data_len": 9632,
+  "parsed": {
+    "program_id": "dzrevZC94tBLwuHw1dyynZxaXTWyp7yocsinyEVPtt4",
+    "program_config_key": "8hCG3Mc1wmCTJYGn4QzFWEmvevonGunRxBTH9qPg1Um9",
+    "admin_key": "61ZSrovJPTWZL1dQAtNxy1GZFgvNmcgfLGPBkeDHUoru",
+    "debt_accountant_key": "acLisxTpNkoctPZoqssyo58pcdnHzJyRFhod7Wxkz5a",
+    "rewards_accountant_key": "acCSLNUiAECGPGayZgBHHDuZW4hLkM7L6hxphXbogBR",
+    "contributor_manager_key": "DZcrmkrqFnPeWN9WhWpRwuy38Bsx7E2MKU5mfUzbTxXt",
+    "sol_2z_swap_program_id": "9DRcqsJUCo8CL2xDCXpogwzLEVKRDzSyNtVgXqsXHfDs",
+    "next_completed_dz_epoch": 88,
+    "is_paused": false,
+    "is_migrated": false,
+    "distribution_parameters": {
+      "calculation_grace_period_minutes": 60,
+      "initialization_grace_period_minutes": 1440,
+      "minimum_epoch_duration_to_finalize_rewards": 10,
+      "community_burn_rate_parameters": {
+        "limit_raw": 500000000,
+        "limit_pct": 0.5,
+        "dz_epochs_to_increasing": 12,
+        "dz_epochs_to_limit": 112,
+        "next_burn_rate_raw": 100000000,
+        "next_burn_rate_pct": 0.1,
+        "mode": "Static"
+      },
+      "solana_validator_fee_parameters": {
+        "base_block_rewards_pct_raw": 500,
+        "base_block_rewards_pct": 0.05,
+        "priority_block_rewards_pct_raw": 500,
+        "priority_block_rewards_pct": 0.05,
+        "inflation_rewards_pct_raw": 0,
+        "inflation_rewards_pct": 0.0,
+        "jito_tips_pct_raw": 0,
+        "jito_tips_pct": 0.0,
+        "fixed_sol_amount": 0
+      }
+    },
+    "relay_parameters": {
+      "distribute_rewards_lamports": 10000
+    },
+    "last_initialized_distribution_timestamp": 1768636080,
+    "debt_write_off_feature_activation_epoch": 91
+  }
+}

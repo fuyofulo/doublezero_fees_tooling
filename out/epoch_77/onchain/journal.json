@@ -1,0 +1,20 @@
+{
+  "context_slot": 394276771,
+  "account": {
+    "pubkey": "2x9zkLfiLAQLYeiibHp2ccSSsF4d8X5UQ3vtBDwbQhuo",
+    "owner": "dzrevZC94tBLwuHw1dyynZxaXTWyp7yocsinyEVPtt4",
+    "lamports": 72647167,
+    "executable": false,
+    "rent_epoch": 18446744073709551615,
+    "data_len": 10240
+  },
+  "remaining_data_len": 10168,
+  "parsed": {
+    "total_sol_balance": 485887,
+    "total_2z_balance": 0,
+    "swap_2z_destination_balance": 143970804198806,
+    "swapped_sol_amount": 1267709223498,
+    "next_dz_epoch_to_sweep_tokens": 79,
+    "lifetime_swapped_2z_amount": 739339248552646
+  }
+}
