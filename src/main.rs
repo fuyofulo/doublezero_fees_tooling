@@ -3,10 +3,13 @@ use std::{
     fs,
     path::{Path, PathBuf},
     str::FromStr,
+    thread,
 };
 
 mod dz;
 mod epoch_report;
+mod enrich;
+mod snapshot_fetch;
 mod zero_copy;
 
 use anyhow::{anyhow, Context, Result};
@@ -33,6 +36,7 @@ struct Args {
     index_distributions: bool,
     rpc_url: String,
     out_dir: Option<PathBuf>,
+    snapshot_bucket: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -228,6 +232,14 @@ struct DistributionsIndex {
     entries: Vec<DistributionIndexEntry>,
 }
 
+#[derive(Debug)]
+struct OnchainSummary {
+    program_id: String,
+    program_config_key: Pubkey,
+    journal_key: Pubkey,
+    distribution_key: Pubkey,
+}
+
 fn main() -> Result<()> {
     let mut raw_args: Vec<String> = env::args().skip(1).collect();
     if matches!(raw_args.first().map(String::as_str), Some("report")) {
@@ -241,6 +253,39 @@ fn main() -> Result<()> {
         return epoch_report::run_from_args(raw_args.into_iter());
     }
 
+    if matches!(raw_args.first().map(String::as_str), Some("snapshot")) {
+        raw_args.remove(0);
+        if raw_args.is_empty()
+            || raw_args.iter().any(|arg| arg == "-h" || arg == "--help")
+        {
+            snapshot_fetch::print_usage();
+            return Ok(());
+        }
+        return snapshot_fetch::run_from_args(raw_args.into_iter());
+    }
+
+    if matches!(raw_args.first().map(String::as_str), Some("enrich")) {
+        raw_args.remove(0);
+        if raw_args.is_empty()
+            || raw_args.iter().any(|arg| arg == "-h" || arg == "--help")
+        {
+            enrich::print_usage();
+            return Ok(());
+        }
+        return enrich::run_from_args(raw_args.into_iter());
+    }
+
+    if matches!(raw_args.first().map(String::as_str), Some("pipeline")) {
+        raw_args.remove(0);
+        if raw_args.is_empty()
+            || raw_args.iter().any(|arg| arg == "-h" || arg == "--help")
+        {
+            print_usage();
+            return Ok(());
+        }
+        return run_pipeline(raw_args.into_iter());
+    }
+
     if raw_args.is_empty()
         || raw_args.iter().any(|arg| arg == "-h" || arg == "--help")
     {
@@ -251,69 +296,32 @@ fn main() -> Result<()> {
     let client = Client::new();
     let args = parse_args(raw_args.into_iter())?;
     let dz_epoch = resolve_epoch(&args, &client)?;
-    let out_dir = args
-        .out_dir
-        .clone()
-        .unwrap_or_else(|| PathBuf::from(format!("out/epoch_{dz_epoch}")));
+    let out_dir =
+        args.out_dir.clone().unwrap_or_else(|| PathBuf::from(format!("out/epoch_{dz_epoch}")));
+    let onchain_dir = out_dir.join("onchain");
 
-    fs::create_dir_all(&out_dir).context("create output directory")?;
-
-    let program_id = REVENUE_DISTRIBUTION_PROGRAM_ID;
-    let program_id_str = program_id.to_string();
-
-    let program_config_key = ProgramConfig::find_address().0;
-    let journal_key = Journal::find_address().0;
-    let distribution_key =
-        Distribution::find_address(DoubleZeroEpoch(dz_epoch)).0;
-
-    let program_config_dump = fetch_and_parse::<ProgramConfigJson, ProgramConfig>(
+    let onchain = write_onchain_bundle(
         &client,
         &args.rpc_url,
-        &program_config_key,
-        program_config_discriminator(),
-        |config| program_config_to_json(&program_id_str, &program_config_key, config),
-    )?;
-    write_json(&out_dir, "program_config.json", &program_config_dump)?;
-
-    let journal_dump = fetch_and_parse::<JournalJson, Journal>(
-        &client,
-        &args.rpc_url,
-        &journal_key,
-        journal_discriminator(),
-        journal_to_json,
-    )?;
-    write_json(&out_dir, "journal.json", &journal_dump)?;
-
-    let distribution_dump = fetch_and_parse::<DistributionJson, Distribution>(
-        &client,
-        &args.rpc_url,
-        &distribution_key,
-        distribution_discriminator(),
-        distribution_to_json,
-    )?;
-    write_json(
+        dz_epoch,
+        &onchain_dir,
         &out_dir,
-        &format!("distribution_{}.json", dz_epoch),
-        &distribution_dump,
+        args.index_distributions,
     )?;
 
     let summary = json!({
-        "program_id": program_id_str,
+        "program_id": onchain.program_id,
         "dz_epoch": dz_epoch,
-        "program_config_key": program_config_key.to_string(),
-        "journal_key": journal_key.to_string(),
-        "distribution_key": distribution_key.to_string(),
+        "program_config_key": onchain.program_config_key.to_string(),
+        "journal_key": onchain.journal_key.to_string(),
+        "distribution_key": onchain.distribution_key.to_string(),
+        "onchain_dir": onchain_dir.display().to_string(),
         "epoch_selection": {
             "mode": if args.use_latest_finalized { "latest_finalized" } else if args.use_latest { "latest_completed" } else { "explicit" },
             "scan_back": args.scan_back
         }
     });
     write_json(&out_dir, "summary.json", &summary)?;
-
-    if args.index_distributions {
-        let index = fetch_distributions_index(&client, &args.rpc_url)?;
-        write_json(&out_dir, "distributions_index.json", &index)?;
-    }
 
     Ok(())
 }
@@ -329,6 +337,7 @@ where
     let mut use_latest_finalized = false;
     let mut scan_back: u64 = 48;
     let mut index_distributions = false;
+    let mut snapshot_bucket: Option<String> = None;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -365,6 +374,11 @@ where
             "--index" => {
                 index_distributions = true;
             }
+            "--snapshot-bucket" => {
+                snapshot_bucket = Some(
+                    args.next().context("missing value for --snapshot-bucket")?,
+                );
+            }
             "-h" | "--help" => {
                 print_usage();
                 std::process::exit(0);
@@ -399,23 +413,153 @@ where
         index_distributions,
         rpc_url,
         out_dir,
+        snapshot_bucket,
     })
 }
 
 fn default_rpc_url() -> String {
-    load_env();
+    let _ = dotenvy::dotenv();
     let key = env::var("HELIUS_API_KEY")
         .expect("HELIUS_API_KEY is not set (try --rpc-url)");
     format!("https://mainnet.helius-rpc.com/?api-key={key}")
 }
 
-fn load_env() {
-    let candidates = ["./.env", "../.env", "../../.env", "../../../.env"];
-    for path in candidates {
-        if dotenvy::from_filename(path).is_ok() {
-            break;
+fn run_pipeline<I>(args: I) -> Result<()>
+where
+    I: Iterator<Item = String>,
+{
+    let client = Client::new();
+    let args = parse_args(args)?;
+    let dz_epoch = resolve_epoch(&args, &client)?;
+
+    let out_dir =
+        args.out_dir.clone().unwrap_or_else(|| PathBuf::from(format!("out/epoch_{dz_epoch}")));
+    let onchain_dir = out_dir.join("onchain");
+    let snapshot_dir = out_dir.join("snapshot");
+    let snapshot_bucket = args
+        .snapshot_bucket
+        .clone()
+        .unwrap_or_else(|| snapshot_fetch::DEFAULT_SNAPSHOT_BUCKET.to_string());
+    let index_distributions = args.index_distributions;
+
+    let rpc_url = args.rpc_url.clone();
+    let onchain_dir_thread = onchain_dir.clone();
+    let out_dir_thread = out_dir.clone();
+    let onchain_handle = thread::spawn(move || -> Result<OnchainSummary> {
+        let client = Client::new();
+        write_onchain_bundle(
+            &client,
+            &rpc_url,
+            dz_epoch,
+            &onchain_dir_thread,
+            &out_dir_thread,
+            index_distributions,
+        )
+    });
+
+    let snapshot_dir_thread = snapshot_dir.clone();
+    let snapshot_bucket_thread = snapshot_bucket.clone();
+    let snapshot_handle = thread::spawn(move || -> Result<PathBuf> {
+        let client = Client::new();
+        snapshot_fetch::fetch_snapshot(
+            &client,
+            dz_epoch,
+            &snapshot_dir_thread,
+            &snapshot_bucket_thread,
+        )
+    });
+
+    let onchain = onchain_handle
+        .join()
+        .map_err(|_| anyhow!("onchain thread panicked"))??;
+    let snapshot_path = snapshot_handle
+        .join()
+        .map_err(|_| anyhow!("snapshot thread panicked"))??;
+    let snapshot_path_str = snapshot_path.display().to_string();
+
+    let enriched_path = enrich::run(enrich::EnrichConfig {
+        snapshot_path,
+        onchain_dir: onchain_dir.clone(),
+        out_dir: Some(out_dir.clone()),
+    })?;
+
+    let summary = json!({
+        "program_id": onchain.program_id,
+        "dz_epoch": dz_epoch,
+        "program_config_key": onchain.program_config_key.to_string(),
+        "journal_key": onchain.journal_key.to_string(),
+        "distribution_key": onchain.distribution_key.to_string(),
+        "onchain_dir": onchain_dir.display().to_string(),
+        "snapshot_dir": snapshot_dir.display().to_string(),
+        "snapshot_file": snapshot_path_str,
+        "snapshot_bucket": snapshot_bucket,
+        "enriched_file": enriched_path.display().to_string(),
+        "epoch_selection": {
+            "mode": if args.use_latest_finalized { "latest_finalized" } else if args.use_latest { "latest_completed" } else { "explicit" },
+            "scan_back": args.scan_back
         }
+    });
+    write_json(&out_dir, "summary.json", &summary)?;
+
+    Ok(())
+}
+
+fn write_onchain_bundle(
+    client: &Client,
+    rpc_url: &str,
+    dz_epoch: u64,
+    onchain_dir: &Path,
+    out_dir: &Path,
+    index_distributions: bool,
+) -> Result<OnchainSummary> {
+    fs::create_dir_all(onchain_dir).context("create output directory")?;
+
+    let program_id = REVENUE_DISTRIBUTION_PROGRAM_ID;
+    let program_id_str = program_id.to_string();
+
+    let program_config_key = ProgramConfig::find_address().0;
+    let journal_key = Journal::find_address().0;
+    let distribution_key =
+        Distribution::find_address(DoubleZeroEpoch(dz_epoch)).0;
+
+    let program_config_dump = fetch_and_parse::<ProgramConfigJson, ProgramConfig>(
+        client,
+        rpc_url,
+        &program_config_key,
+        program_config_discriminator(),
+        |config| program_config_to_json(&program_id_str, &program_config_key, config),
+    )?;
+    write_json(onchain_dir, "program_config.json", &program_config_dump)?;
+
+    let journal_dump = fetch_and_parse::<JournalJson, Journal>(
+        client,
+        rpc_url,
+        &journal_key,
+        journal_discriminator(),
+        journal_to_json,
+    )?;
+    write_json(onchain_dir, "journal.json", &journal_dump)?;
+
+    let distribution_dump = fetch_and_parse::<DistributionJson, Distribution>(
+        client,
+        rpc_url,
+        &distribution_key,
+        distribution_discriminator(),
+        distribution_to_json,
+    )?;
+    write_json(onchain_dir, "distribution.json", &distribution_dump)?;
+
+    if index_distributions {
+        let index = fetch_distributions_index(client, rpc_url)?;
+        write_json(out_dir, "distributions_index.json", &index)?;
     }
+
+    Ok(OnchainSummary {
+        program_id: program_id_str,
+        program_config_key,
+        journal_key,
+        distribution_key,
+    })
 }
 
 fn fetch_and_parse<TOut, TRaw>(
@@ -827,20 +971,31 @@ struct RawAccount {
 
 fn print_usage() {
     eprintln!(
-        "Usage:\\n\
-  fees-tooling [--dz-epoch <n> | --latest | --latest-finalized] [--scan-back <n>] [--rpc-url <url>] [--out-dir <path>] [--index]\\n\
-  fees-tooling report <epoch_dir> [--fees-csv <path>] [--out-dir <path>]\\n\\n\
-Defaults:\\n\
-  --rpc-url  https://mainnet.helius-rpc.com/?api-key=$HELIUS_API_KEY\\n\
-  --out-dir  out/epoch_<dz_epoch>\\n\\n\
-Notes:\\n\
-  report expects <epoch_dir> to exist and contain distribution_<dz_epoch>.json\\n\\n\
-Flags:\\n\
-  --latest           Auto-select latest completed DZ epoch from ProgramConfig\\n\
-  --latest-finalized Find most recent epoch with rewards finalized and swept\\n\
-  --scan-back <n>    Search window when using --latest-finalized (default: 48)\\n\
-  --index            Write distributions_index.json (summary of all distribution accounts)\\n\
-  report             Generate epoch_report.json/.md from an epoch output folder\\n\
-  --fees-csv <path>  Optional fees CSV for reconciliation (report mode)\\n"
+        r#"Usage:
+  fees-tooling [--dz-epoch <n> | --latest | --latest-finalized] [--scan-back <n>] [--rpc-url <url>] [--out-dir <path>] [--index]
+  fees-tooling pipeline [--dz-epoch <n> | --latest | --latest-finalized] [--scan-back <n>] [--rpc-url <url>] [--out-dir <path>] [--index] [--snapshot-bucket <url>]
+  fees-tooling report <epoch_dir> [--fees-csv <path>] [--out-dir <path>]
+  fees-tooling snapshot --epoch <n> [--out-dir <path>] [--bucket <url>]
+  fees-tooling snapshot --latest [--out-dir <path>] [--bucket <url>]
+  fees-tooling enrich --snapshot <path> --onchain-dir <path> [--out-dir <path>]
+
+Defaults:
+  --rpc-url  https://mainnet.helius-rpc.com/?api-key=$HELIUS_API_KEY
+  --out-dir  out/epoch_<dz_epoch>
+
+Notes:
+  report expects <epoch_dir> to contain onchain/distribution.json
+
+Flags:
+  --latest           Auto-select latest completed DZ epoch from ProgramConfig
+  --latest-finalized Find most recent epoch with rewards finalized and swept
+  --scan-back <n>    Search window when using --latest-finalized (default: 48)
+  --index            Write distributions_index.json (summary of all distribution accounts)
+  --snapshot-bucket  Override snapshot S3 bucket (pipeline only)
+  report             Generate epoch_report.json/.md from an epoch output folder
+  snapshot           Download snapshot JSON from the public S3 bucket
+  enrich             Merge snapshot + on-chain outputs into enriched_epoch.json
+  --fees-csv <path>  Optional fees CSV for reconciliation (report mode)
+"#
     );
 }

@@ -226,6 +226,17 @@ where
 }
 
 fn find_distribution_file(input_dir: &Path) -> Result<PathBuf> {
+    let onchain_dir = input_dir.join("onchain");
+    let onchain_path = onchain_dir.join("distribution.json");
+    if onchain_path.exists() {
+        return Ok(onchain_path);
+    }
+
+    let direct_path = input_dir.join("distribution.json");
+    if direct_path.exists() {
+        return Ok(direct_path);
+    }
+
     let mut matches = Vec::new();
     for entry in fs::read_dir(input_dir).context("read input dir")? {
         let entry = entry.context("read entry")?;
@@ -238,7 +249,9 @@ fn find_distribution_file(input_dir: &Path) -> Result<PathBuf> {
     }
 
     match matches.len() {
-        0 => Err(anyhow!("no distribution_*.json found in {input_dir:?}")),
+        0 => Err(anyhow!(
+            "no distribution.json found in {input_dir:?} or {onchain_dir:?}"
+        )),
         1 => Ok(matches.remove(0)),
         _ => Err(anyhow!(
             "multiple distribution_*.json files found; specify a single input dir"
@@ -351,6 +364,8 @@ fn write_markdown(out_dir: &Path, name: &str, report: &EpochReport) -> Result<()
 pub fn print_usage() {
     eprintln!(
         "Usage: fees-tooling report <input_dir> [--fees-csv <path>] [--out-dir <path>]\\n\\n\
+Notes:\\n\
+  input_dir can be an epoch directory (expects onchain/distribution.json)\\n\\n\
 Defaults:\\n\
   --out-dir  <input_dir>\\n"
     );
